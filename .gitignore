@@ -225,3 +225,7 @@ __marimo__/
 test_polar*.txt
 fake_empty_polar*.txt
 *.bl
+*test_sweep.csv
+pilot_sweep.csv
+test_output.csv
+*.zip
