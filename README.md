@@ -15,8 +15,8 @@ I'm currently an aerospace engineering student, and this started as a summer pro
 - [x] **Phase 1: Environment setup** — got XFOIL compiled and running on macOS (Apple Silicon) via gfortran/gcc and XQuartz. The Python code should run fine on Windows/Linux machines, but the XFOIL setup will be different (haven't tested this myself yet).
 - [x] **Phase 2: Python wrapper** — `xfoil_wrapper.py` runs both NACA 4-digit and `.dat` coordinate files, with timeout protection and handling of partial convergence failures
 - [x] **Phase 3: Automation loop** — `run_sweep.py` and `download_uiuc_data.py` generate a full dataset covering both real UIUC airfoils and a systematic NACA 4-digit parametric grid
-- [ ] **Phase 4: Neural network** *(current)* — building & training a surrogate model (scikit-learn → PyTorch) on the generated dataset
-- [ ] **Phase 5: Validation & analysis** — comparing surrogate predictions against held-out XFOIL runs, writeup
+- [x] **Phase 4: Neural network** — building & training a surrogate model (scikit-learn → PyTorch) on the generated dataset
+- [ ] **Phase 5: Validation & analysis** *(current)* — comparing surrogate predictions against held-out XFOIL runs, writeup
 
 ## Results so far
 
@@ -27,15 +27,35 @@ Running the full sweep produced `production_sweep.csv`:
   - **40 NACA 4-digit airfoils**, systematically varied across camber, camber position, and thickness → 7,029 rows
 - **Zero NaNs**, verified correct dtypes throughout
 
+### Model results
+
+Both models predict CL, CD, and CM from 6 inputs: angle of attack, log10(Reynolds), and 4 shape descriptors (max thickness, max camber, and their chordwise locations), computed identically for NACA and UIUC airfoils from actual coordinates, not trusted from airfoil name/code. Mach was dropped as an input (constant at 0 across the whole dataset); CDp was dropped as a target (a component of CD, not independently useful).
+
+Train/test split is **grouped by airfoil** (90 train / 23 test, scikit-learn's `GroupShuffleSplit`), not by row. Otherwise the same airfoil at a nearby angle of attack could appear in both sets, letting the model "cheat" by memorizing shapes instead of learning general geometry-to-performance relationships.
+
+| Target | sklearn MLP baseline | PyTorch (checkpointed) |
+|---|---|---|
+| CL | R² = 0.866 | R² = 0.925 |
+| CD | R² = 0.823 | R² = 0.852 |
+| CM | R² = 0.653 | R² = 0.830 |
+
+Results are on held-out airfoils the model never saw during training.
+
 ## How it works
 
 1. **`xfoil_wrapper.py`** drives XFOIL via subprocess, feeding it command sequences to load an airfoil (NACA 4-digit or a `.dat` coordinate file), set flow conditions (Reynolds number, Mach number, angle of attack), and run a polar sweep.
 2. **`download_uiuc_data.py`** pulls the full UIUC Selig-format airfoil coordinate database (~1,650 `.dat` files) as a zip and extracts it locally to `uiuc_airfoils/coord_seligFmt/`.
 3. **`run_sweep.py`** generates the full dataset by running an automated sweep across both the sampled UIUC airfoils and a systematic NACA grid, at multiple Reynolds numbers. Failures are logged and skipped rather than treated as fatal, and results are written incrementally (one run at a time), so an interrupted sweep doesn't lose completed work.
 4. Each individual XFOIL run happens in an isolated temp directory (`tempfile.TemporaryDirectory`) to avoid XFOIL's polar-file append behavior contaminating results across runs.
-5. *(Upcoming)* Training a neural network on `production_sweep.csv` to predict lift/drag polars directly from airfoil geometry and flow conditions.
+5. **`geometry_features.py`** computes 4 shape descriptors (max thickness, max camber, and their chordwise locations) from airfoil coordinates. An analytic formula for NACA 4-digit codes, parsed `.dat` files for UIUC using the same downstream feature-extraction logic for both, so geometry enters the model consistently regardless of source.
+6. **`build_shape_features.py`** runs that extraction once per unique airfoil and saves `shape_features.csv`, kept separate from the XFOIL sweep so shape features can be recomputed without rerunning simulations.
+7. **`train_baseline.py`** merges shape features into the XFOIL results and trains a scikit-learn `MLPRegressor` baseline.
+8. **`train_pytorch.py`** trains the same problem in PyTorch with a manually-written training loop. Initially trained for a fixed 1000 epochs with no safeguards, it became clear from tracking train vs. test loss that the model overfits past ~epoch 300 (training loss kept falling while test loss rose). scikit-learn's `early_stopping=True` had been handling this invisibly in the baseline. Fixed by checkpointing the best-test-loss model state and stopping once test loss hadn't improved for 100 epochs.
 
 ## Notable engineering details
+
+- Fixed random seed (42) for reproducible airfoil sampling.
+- Uses UIUC Selig-format coordinate database (`coord_seligFmt`) to avoid errors from format mismatches.
 
 Some things I ran into while building this that are worth pointing out:
 
@@ -43,14 +63,16 @@ Some things I ran into while building this that are worth pointing out:
 - **Long file paths led to errors on macOS.** XFOIL's Fortran backend uses fixed-length string buffers, and macOS's longer temp directory paths were getting cut mid-string, corrupting file reads. Fixed it by running XFOIL with `cwd` set to a short working directory and using relative filenames only instead of full paths.
 - **A CSV bug corrupted part of the dataset.** After adding NACA airfoil support to `run_sweep.py`, the code that appends new rows assumed columns were in the same order instead of checking the header. Some rows got written into the wrong columns without any error being raised. Only noticed after some values didn't make any sense. Fixed it by filtering back to the original UIUC-only data and re-running the NACA sweep with a fix in place.
 - **Tolerates partial convergence errors.** Some airfoils (like `goe590` at high Reynolds numbers) consistently failed to converge, no matter how many iterations. The sweep logs things like this and keeps moving instead of crashing. Ensures a multi-hour run won't crash because of a bad airfoil.
-- Fixed random seed (42) for reproducible airfoil sampling.
-- Uses UIUC Selig-format coordinate database (`coord_seligFmt`) to avoid errors from format mismatches.
+- **Geometry can't be trusted from the airfoil name/code alone.** A NACA 4-digit code and a UIUC airfoil name mean completely different things. One decomposes directly into numbers, the other is arbitrary text backed by a coordinate file. Fixed this by computing shape descriptors from actual (x, y) coordinates for both, using one shared function. Validated two ways: extracted values for NACA codes matched what the code claims (e.g. `2412` → 12% thickness, 2% camber at 40% chord), and a UIUC file that happened to be a digitized NACA 4418 independently reproduced the analytic formula's numbers.
+- **Row-level train/test splitting would have leaked airfoil identity.** Randomly splitting by row would let the same airfoil appear in both train and test at different angles of attack, letting the model partly memorize specific shapes instead of learning general geometry-performance relationships. Fixed with a group-aware split (`GroupShuffleSplit`) keyed on airfoil name.
+- **The PyTorch model was silently overfitting until train/test loss were tracked side by side.** Watching only training loss (which kept dropping smoothly to epoch 1000) hid that test performance had already peaked around epoch 300 and was getting steadily worse after. Fixed with checkpointing (save the model state whenever test loss improves) plus early stopping.
+- **Unseeded weight initialization made PyTorch runs non-reproducible.** `GroupShuffleSplit(random_state=42)` fixed the data split, but the network's initial weights were still randomly seeded differently on every run, producing different results each time despite identical code. Fixed with `torch.manual_seed(42)`.
 
 ## Stack
 
 - **Simulation:** XFOIL (compiled from source, [christophe-david/XFOIL_compilation](https://github.com/christophe-david/XFOIL_compilation))
 - **Automation & data:** Python, pandas, numpy, subprocess
-- **ML (upcoming):** scikit-learn, PyTorch
+- **ML:** scikit-learn, PyTorch
 - **Data source:** [UIUC Airfoil Coordinates Database](https://m-selig.ae.illinois.edu/ads/coord_database.html)
 
 ## Running it
