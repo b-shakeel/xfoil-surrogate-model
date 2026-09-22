@@ -2,23 +2,10 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler
-import torch, copy
+import torch, copy, joblib
 import torch.nn as nn
-import torch.nn.functional as F
+from model import AirfoilNet
 from sklearn.metrics import r2_score, mean_absolute_error
-
-class AirfoilNet(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layer1 = nn.Linear(6, 64)
-        self.layer2 = nn.Linear(64, 64)
-        self.layer3 = nn.Linear(64, 3)
-    
-    def forward(self, x):
-        x = F.relu(self.layer1(x))
-        x = F.relu(self.layer2(x))
-        x = self.layer3(x)
-        return x
 
 df = pd.read_csv('production_sweep.csv', dtype={"airfoil": str})
 shape_df = pd.read_csv("shape_features.csv", dtype={"airfoil": str})
@@ -100,6 +87,10 @@ for epoch in range(n_epochs):
         print(f"Epoch {epoch}: train_loss: {loss.item():.4f}, test_loss: {test_loss.item():.4f}")
 
 model.load_state_dict(best_model_state)
+torch.save(best_model_state, "airfoil_net.pt")
+joblib.dump({"x_scaler": x_scaler, "yscaler": y_scaler}, "scalers.joblib")
+test_airfoils = df["airfoil"].iloc[test_idx].unique()
+pd.DataFrame({"airfoil": test_airfoils}).to_csv("test_airfoils.csv", index=False)
 
 model.eval()
 with torch.no_grad():
