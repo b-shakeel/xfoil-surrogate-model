@@ -3,7 +3,7 @@ import zipfile
 import os
 
 url = "https://m-selig.ae.illinois.edu/ads/archives/coord_seligFmt.zip"
-zip_path = "coord_seligfmt.zip"
+zip_path = "coord_seligFmt.zip"
 extract_dir = "uiuc_airfoils"
 
 urllib.request.urlretrieve(url, zip_path)
