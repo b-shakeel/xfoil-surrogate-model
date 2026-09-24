@@ -13,7 +13,7 @@ I'm currently an aerospace engineering student, and this started as a summer pro
 **In progress** — Phase 5 of 5.
 
 - [x] **Phase 1: Environment setup:** Got XFOIL compiled and running on macOS (Apple Silicon) via gfortran/gcc and XQuartz. The Python code should run fine on Windows/Linux machines, but the XFOIL setup will be different (haven't tested this myself yet).
-- [x] **Phase 2: Python wrapp:r** `xfoil_wrapper.py` runs both NACA 4-digit and `.dat` coordinate files, with timeout protection and handling of partial convergence failures
+- [x] **Phase 2: Python wrapper:** `xfoil_wrapper.py` runs both NACA 4-digit and `.dat` coordinate files, with timeout protection and handling of partial convergence failures
 - [x] **Phase 3: Automation loop:** `run_sweep.py` and `download_uiuc_data.py` generate a full dataset covering both real UIUC airfoils and a systematic NACA 4-digit parametric grid
 - [x] **Phase 4: Neural network:** Building & training a surrogate model (scikit-learn → PyTorch) on the generated dataset
 - [ ] **Phase 5: Validation & analysis** *(current)***:** Comparing surrogate predictions against held-out XFOIL runs, writeup & documentation
