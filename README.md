@@ -10,13 +10,13 @@ I'm currently an aerospace engineering student, and this started as a summer pro
 
 ## Status
 
-**In progress** — Phase 4 of 5.
+**In progress** — Phase 5 of 5.
 
-- [x] **Phase 1: Environment setup** — got XFOIL compiled and running on macOS (Apple Silicon) via gfortran/gcc and XQuartz. The Python code should run fine on Windows/Linux machines, but the XFOIL setup will be different (haven't tested this myself yet).
-- [x] **Phase 2: Python wrapper** — `xfoil_wrapper.py` runs both NACA 4-digit and `.dat` coordinate files, with timeout protection and handling of partial convergence failures
-- [x] **Phase 3: Automation loop** — `run_sweep.py` and `download_uiuc_data.py` generate a full dataset covering both real UIUC airfoils and a systematic NACA 4-digit parametric grid
-- [x] **Phase 4: Neural network** — building & training a surrogate model (scikit-learn → PyTorch) on the generated dataset
-- [ ] **Phase 5: Validation & analysis** *(current)* — comparing surrogate predictions against held-out XFOIL runs, writeup
+- [x] **Phase 1: Environment setup:** Got XFOIL compiled and running on macOS (Apple Silicon) via gfortran/gcc and XQuartz. The Python code should run fine on Windows/Linux machines, but the XFOIL setup will be different (haven't tested this myself yet).
+- [x] **Phase 2: Python wrapp:r** `xfoil_wrapper.py` runs both NACA 4-digit and `.dat` coordinate files, with timeout protection and handling of partial convergence failures
+- [x] **Phase 3: Automation loop:** `run_sweep.py` and `download_uiuc_data.py` generate a full dataset covering both real UIUC airfoils and a systematic NACA 4-digit parametric grid
+- [x] **Phase 4: Neural network:** Building & training a surrogate model (scikit-learn → PyTorch) on the generated dataset
+- [ ] **Phase 5: Validation & analysis** *(current)***:** Comparing surrogate predictions against held-out XFOIL runs, writeup & documentation
 
 ## Results so far
 
@@ -39,7 +39,7 @@ Train/test split is **grouped by airfoil** (90 train / 23 test, scikit-learn's `
 | CD | R² = 0.823 | R² = 0.852 |
 | CM | R² = 0.653 | R² = 0.830 |
 
-Results are on held-out airfoils the model never saw during training.
+Results are on airfoils the model never saw during training.
 
 ## How it works
 
@@ -82,7 +82,19 @@ Some things I ran into while building this that are worth pointing out:
 python3 download_uiuc_data.py
 
 # Run the full sweep (generates production_sweep.csv)
-python3 run_sweep.py
+python3 run_sweep.py 
+
+# Compute shape descriptors for every airfoil (generates shape_features.csv)
+python3 build_shape_features.py
+
+# Train the scikit-learn baseline
+python3 train_baseline.py
+
+# Train the PyTorch model (saves airfoil_net.pt and scalers.joblib)
+python3 train_pytorch.py
+
+# Reproduce the reported R² / MAE on the held-out test airfoils
+python3 analyze_model.py
 ```
 
-The repo already includes `production_sweep.csv` and the downloaded airfoil data, so you can skip straight to inspecting results or building on top of them without re-running the sweep.
+The repo already includes the generated dataset, shape features, and trained model weights (`production_sweep.csv`, `shape_features.csv`, `airfoil_net.pt`, `scalers.joblib`), so you can skip straight to `analyze_model.py` to see results without re-running the earlier steps.
